@@ -5,7 +5,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Target, Shield, Trophy, RotateCcw, Languages, Info } from 'lucide-react';
+import { Target, Shield, Trophy, RotateCcw, Languages, Info, Home } from 'lucide-react';
 
 // --- Constants ---
 const GAME_WIDTH = 800;
@@ -89,6 +89,7 @@ const TRANSLATIONS = {
     targetScore: '目标得分',
     level: '关卡',
     nextLevel: '进入下一关',
+    congrats: '吾去！可以可以！',
   },
   en: {
     title: 'Nova Defense',
@@ -103,6 +104,7 @@ const TRANSLATIONS = {
     targetScore: 'Target Score',
     level: 'Level',
     nextLevel: 'Next Level',
+    congrats: 'Wow! Impressive!',
   }
 };
 
@@ -112,7 +114,9 @@ export default function App() {
   const [score, setScore] = useState(0);
   const [level, setLevel] = useState(1);
   const [lang, setLang] = useState<Language>('zh');
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
+  const starsRef = useRef<{x: number, y: number, size: number}[]>([]);
+  const shakeRef = useRef(0);
   
   // Game Entities
   const rocketsRef = useRef<Rocket[]>([]);
@@ -154,6 +158,19 @@ export default function App() {
     }));
 
     setScore(0);
+
+    // Init Stars
+    if (starsRef.current.length === 0) {
+      const stars = [];
+      for (let i = 0; i < 100; i++) {
+        stars.push({
+          x: Math.random() * GAME_WIDTH,
+          y: Math.random() * GAME_HEIGHT,
+          size: Math.random() * 2
+        });
+      }
+      starsRef.current = stars;
+    }
   }, []);
 
   useEffect(() => {
@@ -277,32 +294,59 @@ export default function App() {
       setGameState('GAMEOVER');
     }
     
-    if (level === 1 && score >= 500) {
+    if (level === 1 && score >= 1000) {
       setGameState('LEVEL_UP');
-    } else if (level === 2 && score >= VICTORY_SCORE) {
+    } else if (level === 2 && score >= 1000) {
       setGameState('VICTORY');
     }
   }, [gameState, spawnRocket, score, level]);
 
   const draw = useCallback((ctx: CanvasRenderingContext2D) => {
+    ctx.save();
+    if (shakeRef.current > 0) {
+      const shakeX = (Math.random() - 0.5) * shakeRef.current;
+      const shakeY = (Math.random() - 0.5) * shakeRef.current;
+      ctx.translate(shakeX, shakeY);
+      shakeRef.current *= 0.9;
+      if (shakeRef.current < 0.1) shakeRef.current = 0;
+    }
+
     ctx.clearRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
     // Background
-    ctx.fillStyle = '#0a0a0a';
+    ctx.fillStyle = '#050505';
     ctx.fillRect(0, 0, GAME_WIDTH, GAME_HEIGHT);
 
+    // Draw Stars
+    ctx.fillStyle = '#ffffff';
+    starsRef.current.forEach(star => {
+      const opacity = 0.3 + Math.abs(Math.sin(tick * 0.02 + star.x)) * 0.7;
+      ctx.globalAlpha = opacity;
+      ctx.fillRect(star.x, star.y, star.size, star.size);
+    });
+    ctx.globalAlpha = 1.0;
+
     // Ground
-    ctx.fillStyle = '#1a1a1a';
+    const groundGradient = ctx.createLinearGradient(0, GAME_HEIGHT - 20, 0, GAME_HEIGHT);
+    groundGradient.addColorStop(0, '#1a1a1a');
+    groundGradient.addColorStop(1, '#000000');
+    ctx.fillStyle = groundGradient;
     ctx.fillRect(0, GAME_HEIGHT - 20, GAME_WIDTH, 20);
 
     // Draw Cities
     citiesRef.current.forEach(city => {
       if (city.destroyed) {
-        ctx.fillStyle = '#333';
+        ctx.fillStyle = '#222';
         ctx.fillRect(city.x - 10, city.y - 5, 20, 5);
       } else {
+        // City Body
         ctx.fillStyle = '#4ade80';
         ctx.fillRect(city.x - 12, city.y - 15, 24, 15);
+        // Windows
+        ctx.fillStyle = '#fef08a';
+        ctx.fillRect(city.x - 8, city.y - 12, 3, 3);
+        ctx.fillRect(city.x + 5, city.y - 12, 3, 3);
+        // Roof
         ctx.fillStyle = '#22c55e';
         ctx.fillRect(city.x - 8, city.y - 20, 16, 5);
       }
@@ -311,29 +355,34 @@ export default function App() {
     // Draw Turrets
     turretsRef.current.forEach(turret => {
       if (turret.destroyed) {
-        ctx.fillStyle = '#444';
+        ctx.fillStyle = '#333';
         ctx.beginPath();
         ctx.arc(turret.x, turret.y, 15, Math.PI, 0);
         ctx.fill();
       } else {
-        ctx.fillStyle = '#3b82f6';
+        const turretGradient = ctx.createRadialGradient(turret.x, turret.y - 5, 5, turret.x, turret.y, 20);
+        turretGradient.addColorStop(0, '#60a5fa');
+        turretGradient.addColorStop(1, '#1e40af');
+        
+        ctx.fillStyle = turretGradient;
         ctx.beginPath();
         ctx.arc(turret.x, turret.y, 20, Math.PI, 0);
         ctx.fill();
         
         // Barrel
-        ctx.strokeStyle = '#60a5fa';
-        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#93c5fd';
+        ctx.lineWidth = 6;
+        ctx.lineCap = 'round';
         ctx.beginPath();
-        ctx.moveTo(turret.x, turret.y - 10);
+        ctx.moveTo(turret.x, turret.y - 5);
         ctx.lineTo(turret.x, turret.y - 25);
         ctx.stroke();
 
-        // Ammo text
-        ctx.fillStyle = '#fff';
-        ctx.font = '10px monospace';
+        // Ammo text next to turret
+        ctx.fillStyle = turret.ammo < 5 ? '#f87171' : '#fff';
+        ctx.font = 'bold 12px monospace';
         ctx.textAlign = 'center';
-        ctx.fillText(turret.ammo.toString(), turret.x, turret.y + 10);
+        ctx.fillText(`${turret.ammo}`, turret.x, turret.y - 35);
       }
     });
 
@@ -405,8 +454,11 @@ export default function App() {
       ctx.beginPath();
       ctx.arc(exp.x, exp.y, exp.radius, 0, Math.PI * 2);
       ctx.fill();
+      
+      if (exp.radius > 5) shakeRef.current = Math.max(shakeRef.current, exp.radius * 0.1);
     });
-  }, []);
+    ctx.restore();
+  }, [tick]);
 
   const loop = useCallback(() => {
     const canvas = canvasRef.current;
@@ -485,6 +537,7 @@ export default function App() {
 
   const startNextLevel = () => {
     setLevel(2);
+    setScore(0);
     // Replenish ammo but keep cities status
     turretsRef.current.forEach(t => {
       if (!t.destroyed) t.ammo = t.maxAmmo;
@@ -515,9 +568,19 @@ export default function App() {
           <button 
             onClick={() => setLang(l => l === 'zh' ? 'en' : 'zh')}
             className="p-2 hover:bg-white/10 rounded-full transition-colors"
+            title={lang === 'zh' ? '切换语言' : 'Switch Language'}
           >
             <Languages className="w-5 h-5" />
           </button>
+          {gameState !== 'START' && (
+            <button 
+              onClick={() => setGameState('START')}
+              className="p-2 hover:bg-white/10 rounded-full transition-colors text-gray-400 hover:text-white"
+              title={t.backToMenu}
+            >
+              <Home className="w-5 h-5" />
+            </button>
+          )}
         </div>
       </div>
 
@@ -543,9 +606,18 @@ export default function App() {
             >
               <Target className="w-16 h-16 text-blue-500 mb-6 animate-pulse" />
               <h2 className="text-4xl font-bold mb-4 tracking-tighter uppercase">{t.title}</h2>
-              <p className="text-gray-400 mb-8 max-w-md">{t.instructions}</p>
-              <div className="flex flex-col gap-2 mb-8 text-sm font-mono text-emerald-500/80">
-                <span>{t.targetScore}: {VICTORY_SCORE}</span>
+              <div className="bg-white/5 p-6 rounded-2xl mb-8 max-w-md text-left border border-white/10">
+                <h3 className="text-blue-400 font-bold mb-2 uppercase text-sm flex items-center gap-2">
+                  <Info className="w-4 h-4" />
+                  {lang === 'zh' ? '游戏规则' : 'Game Rules'}
+                </h3>
+                <ul className="text-xs text-gray-300 space-y-2 list-disc list-inside">
+                  <li>{lang === 'zh' ? '点击屏幕发射拦截导弹。' : 'Click screen to fire interceptor missiles.'}</li>
+                  <li>{lang === 'zh' ? '导弹在点击位置爆炸，摧毁范围内的敌方火箭。' : 'Missiles explode at click point, destroying nearby rockets.'}</li>
+                  <li>{lang === 'zh' ? '保护底部的 6 座城市和 3 座炮台。' : 'Protect 6 cities and 3 turrets at the bottom.'}</li>
+                  <li>{lang === 'zh' ? '炮台弹药有限，请谨慎使用。' : 'Turrets have limited ammo, use wisely.'}</li>
+                  <li>{lang === 'zh' ? '击毁一个火箭获得 20 分，目标 1000 分过关。' : 'Destroy a rocket for 20 pts. Reach 1000 pts to pass.'}</li>
+                </ul>
               </div>
               <button
                 onClick={startGame}
@@ -566,13 +638,22 @@ export default function App() {
               <h2 className="text-5xl font-bold mb-2 tracking-tighter uppercase text-blue-500">
                 {t.level} 1 {t.victory}
               </h2>
-              <p className="text-gray-400 mb-8">{lang === 'zh' ? '准备好迎接更快的挑战了吗？' : 'Ready for a faster challenge?'}</p>
-              <button
-                onClick={startNextLevel}
-                className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/20"
-              >
-                {t.nextLevel}
-              </button>
+              <p className="text-xl font-bold text-emerald-400 mb-4 animate-bounce">{t.congrats}</p>
+              <p className="text-gray-400 mb-8">{lang === 'zh' ? '第一关目标达成！准备好迎接更快的挑战了吗？' : 'Level 1 target reached! Ready for a faster challenge?'}</p>
+              <div className="flex flex-col sm:flex-row gap-3">
+                <button
+                  onClick={startNextLevel}
+                  className="px-8 py-3 bg-blue-600 hover:bg-blue-500 text-white rounded-full font-bold transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-blue-500/20"
+                >
+                  {t.nextLevel}
+                </button>
+                <button
+                  onClick={() => setGameState('START')}
+                  className="flex items-center justify-center gap-2 px-8 py-3 bg-white/10 text-white hover:bg-white/20 rounded-full font-bold transition-all transform hover:scale-105 active:scale-95 border border-white/10"
+                >
+                  {t.backToMenu}
+                </button>
+              </div>
             </motion.div>
           )}
 
@@ -590,6 +671,9 @@ export default function App() {
               <h2 className={`text-5xl font-bold mb-2 tracking-tighter uppercase ${gameState === 'VICTORY' ? 'text-yellow-500' : 'text-red-500'}`}>
                 {gameState === 'VICTORY' ? t.victory : t.gameover}
               </h2>
+              {gameState === 'VICTORY' && (
+                <p className="text-xl font-bold text-emerald-400 mb-4 animate-bounce">{t.congrats}</p>
+              )}
               <div className="mb-8">
                 <span className="text-gray-400 uppercase text-xs block mb-1">{t.score}</span>
                 <span className="text-4xl font-mono font-bold text-white">{score}</span>
